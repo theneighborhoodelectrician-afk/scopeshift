@@ -13,9 +13,13 @@ export default function HomePage() {
             <p className="max-w-2xl text-base text-slate-300">
               AI-powered role-play for residential service technicians, with realistic homeowners, live coaching, post-scenario scoring, and progress tracking.
             </p>
-            <div className="flex gap-3">
-              <Link href="/practice/random"><Button>Start Training</Button></Link>
-              <Link href="/dashboard"><Button className="bg-white text-ink hover:bg-mist">View Dashboard</Button></Link>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/signup"><Button>Create Account</Button></Link>
+              <Link href="/login"><Button className="bg-white text-ink hover:bg-mist">Log In</Button></Link>
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm text-slate-300">
+              <Link href="/practice/random" className="underline-offset-4 hover:underline">Start Training</Link>
+              <Link href="/dashboard" className="underline-offset-4 hover:underline">View Dashboard</Link>
             </div>
           </div>
           <div className="rounded-3xl bg-white/10 p-6">
