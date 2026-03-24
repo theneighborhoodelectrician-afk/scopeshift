@@ -1,0 +1,341 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  owner
+  manager
+  technician
+  admin
+}
+
+enum ScenarioMode {
+  random
+  targeted
+}
+
+enum DifficultyMode {
+  guided_mode
+  field_mode
+  ride_along_mode
+}
+
+enum CoachMode {
+  off
+  light
+  full
+}
+
+enum ScenarioStatus {
+  created
+  active
+  completed
+  abandoned
+}
+
+enum SpeakerType {
+  homeowner
+  technician
+  coach
+  system
+}
+
+enum ScenarioCategory {
+  outlet_issue
+  surge_protection
+  panel_upgrade
+  generator_backup
+  ev_charger
+  fixture_install
+  breaker_issue
+  partial_power
+  gfci_issue
+  remodel_prep
+}
+
+model Organization {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  teams       Team[]
+  users       User[]
+  memberships Membership[]
+  sessions    ScenarioSession[]
+  presets     PracticePreset[]
+}
+
+model Team {
+  id               String            @id @default(uuid()) @db.Uuid
+  organizationId   String            @db.Uuid
+  name             String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users            User[]
+  memberships      Membership[]
+  sessions         ScenarioSession[]
+  leaderboardItems LeaderboardEntry[]
+
+  @@index([organizationId])
+}
+
+model User {
+  id                String               @id @default(uuid()) @db.Uuid
+  organizationId    String?              @db.Uuid
+  teamId            String?              @db.Uuid
+  firstName         String?
+  lastName          String?
+  email             String               @unique
+  role              UserRole             @default(technician)
+  passwordHash      String?
+  authProviderId    String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  organization      Organization?        @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  team              Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  memberships       Membership[]
+  sessions          ScenarioSession[]
+  progress          UserProgress?
+  presets           PracticePreset[]
+  recentMemory      RecentScenarioMemory[]
+  achievements      UserAchievement[]
+  leaderboardItems  LeaderboardEntry[]
+
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model Membership {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @db.Uuid
+  organizationId  String        @db.Uuid
+  teamId          String?       @db.Uuid
+  role            UserRole
+  createdAt       DateTime      @default(now())
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team            Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model ScenarioTemplate {
+  id            String             @id @default(uuid()) @db.Uuid
+  name          String
+  slug          String             @unique
+  category      ScenarioCategory
+  description   String?
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  sessions      ScenarioSession[]
+}
+
+model ScenarioSession {
+  id                    String             @id @default(uuid()) @db.Uuid
+  userId                String             @db.Uuid
+  organizationId        String?            @db.Uuid
+  teamId                String?            @db.Uuid
+  scenarioTemplateId    String?            @db.Uuid
+
+  mode                  ScenarioMode
+  difficultyMode        DifficultyMode
+  coachMode             CoachMode
+
+  scenarioTitle         String
+  visibleProblem        String
+  hiddenProblem         String
+  homeownerPersonality  String
+  hiddenMotivation      String
+  objectionStyle        String
+  urgencyLevel          String
+  homeAgeRange          String?
+  neighborhoodType      String?
+  spouseInvolved        Boolean            @default(false)
+  priorContractorSeen   Boolean            @default(false)
+
+  expectedBestPath      Json?
+  failureConditions     Json?
+
+  status                ScenarioStatus     @default(created)
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization          Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  team                  Team?              @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  scenarioTemplate      ScenarioTemplate?  @relation(fields: [scenarioTemplateId], references: [id], onDelete: SetNull)
+
+  turns                 ScenarioTurn[]
+  score                 ScenarioScore?
+  feedback              ScenarioFeedback?
+  recentMemoryEntries   RecentScenarioMemory[]
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([teamId])
+  @@index([scenarioTemplateId])
+  @@index([completedAt])
+}
+
+model ScenarioTurn {
+  id                  String          @id @default(uuid()) @db.Uuid
+  scenarioSessionId   String          @db.Uuid
+  turnIndex           Int
+  speaker             SpeakerType
+  messageText         String
+  metadataJson        Json?
+  createdAt           DateTime        @default(now())
+
+  scenarioSession     ScenarioSession @relation(fields: [scenarioSessionId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioSessionId])
+  @@unique([scenarioSessionId, turnIndex])
+}
+
+model ScenarioScore {
+  id                      String          @id @default(uuid()) @db.Uuid
+  scenarioSessionId       String          @unique @db.Uuid
+  rapportScore            Int
+  discoveryScore          Int
+  riskExplanationScore    Int
+  educationScore          Int
+  optionsScore            Int
+  commitmentScore         Int
+  overallScore            Int
+  createdAt               DateTime        @default(now())
+
+  scenarioSession         ScenarioSession @relation(fields: [scenarioSessionId], references: [id], onDelete: Cascade)
+}
+
+model ScenarioFeedback {
+  id                    String          @id @default(uuid()) @db.Uuid
+  scenarioSessionId     String          @unique @db.Uuid
+  missedQuestions       Json
+  missedMotivations     Json
+  strongMoments         Json
+  phrasingImprovements  Json
+  nextAttemptStrategy   String
+  createdAt             DateTime        @default(now())
+
+  scenarioSession       ScenarioSession @relation(fields: [scenarioSessionId], references: [id], onDelete: Cascade)
+}
+
+model UserProgress {
+  id                         String    @id @default(uuid()) @db.Uuid
+  userId                     String    @unique @db.Uuid
+  totalSessions              Int       @default(0)
+  completedSessions          Int       @default(0)
+  avgRapportScore            Decimal   @default(0) @db.Decimal(5, 2)
+  avgDiscoveryScore          Decimal   @default(0) @db.Decimal(5, 2)
+  avgRiskExplanationScore    Decimal   @default(0) @db.Decimal(5, 2)
+  avgEducationScore          Decimal   @default(0) @db.Decimal(5, 2)
+  avgOptionsScore            Decimal   @default(0) @db.Decimal(5, 2)
+  avgCommitmentScore         Decimal   @default(0) @db.Decimal(5, 2)
+  avgOverallScore            Decimal   @default(0) @db.Decimal(5, 2)
+  currentStreak              Int       @default(0)
+  longestStreak              Int       @default(0)
+  lastSessionAt              DateTime?
+  updatedAt                  DateTime  @updatedAt
+
+  user                       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PracticePreset {
+  id                       String         @id @default(uuid()) @db.Uuid
+  organizationId           String?        @db.Uuid
+  createdByUserId          String         @db.Uuid
+  name                     String
+  category                 String?
+  difficultyMode           DifficultyMode
+  coachMode                CoachMode
+  enabledVisibleProblems   Json
+  enabledHiddenProblems    Json
+  enabledPersonalities     Json
+  enabledMotivations       Json
+  enabledObjectionStyles   Json
+  isActive                 Boolean        @default(true)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  organization             Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdByUser            User           @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([createdByUserId])
+}
+
+model RecentScenarioMemory {
+  id                    String          @id @default(uuid()) @db.Uuid
+  userId                String          @db.Uuid
+  scenarioSessionId     String          @db.Uuid
+  visibleProblem        String
+  homeownerPersonality  String
+  hiddenMotivation      String
+  createdAt             DateTime        @default(now())
+
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scenarioSession       ScenarioSession @relation(fields: [scenarioSessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([scenarioSessionId])
+  @@index([createdAt])
+}
+
+model Achievement {
+  id              String            @id @default(uuid()) @db.Uuid
+  slug            String            @unique
+  name            String
+  description     String?
+  createdAt       DateTime          @default(now())
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @db.Uuid
+  achievementId   String        @db.Uuid
+  earnedAt        DateTime      @default(now())
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement     Achievement   @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@index([achievementId])
+}
+
+model LeaderboardEntry {
+  id                String      @id @default(uuid()) @db.Uuid
+  userId            String      @db.Uuid
+  teamId            String?     @db.Uuid
+  weekStartDate     DateTime    @db.Date
+  averageScore      Decimal     @db.Decimal(5, 2)
+  sessionsCompleted Int
+  createdAt         DateTime    @default(now())
+
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team              Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([weekStartDate])
+  @@unique([userId, weekStartDate])
+}
