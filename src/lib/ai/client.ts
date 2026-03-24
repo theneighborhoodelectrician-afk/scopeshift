@@ -5,50 +5,73 @@ type ResponseInput = {
   maxOutputTokens?: number;
 };
 
+function collectPossibleText(value: unknown): string[] {
+  if (value == null) {
+    return [];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" ? [] : [trimmed];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectPossibleText(item));
+  }
+
+  if (typeof value === "object") {
+    const typedValue = value as Record<string, unknown>;
+    const directKeys = ["output_text", "text", "value"];
+    const nestedKeys = ["content", "output", "summary"];
+    const parts: string[] = [];
+
+    for (const key of directKeys) {
+      const direct = typedValue[key];
+      if (typeof direct === "string") {
+        const trimmed = direct.trim();
+        if (trimmed !== "") {
+          parts.push(trimmed);
+        }
+      }
+    }
+
+    for (const key of nestedKeys) {
+      parts.push(...collectPossibleText(typedValue[key]));
+    }
+
+    return parts;
+  }
+
+  return [];
+}
+
+function dedupeTexts(parts: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  for (const part of parts) {
+    if (seen.has(part) === false) {
+      seen.add(part);
+      unique.push(part);
+    }
+  }
+
+  return unique;
+}
+
 function readOutputText(payload: unknown): string {
-  if (payload == null) {
+  if (payload == null || typeof payload !== "object") {
     return "";
   }
 
-  if (typeof payload === "object") {
-    const directText = (payload as { output_text?: unknown }).output_text;
-    if (typeof directText === "string") {
-      return directText.trim();
-    }
+  const typedPayload = payload as Record<string, unknown>;
+  const parts = dedupeTexts([
+    ...collectPossibleText(typedPayload.output_text),
+    ...collectPossibleText(typedPayload.output),
+    ...collectPossibleText(typedPayload.content)
+  ]);
 
-    const output = (payload as { output?: unknown[] }).output;
-    if (Array.isArray(output) === false) {
-      return "";
-    }
-
-    const textParts: string[] = [];
-
-    for (const item of output) {
-      if (item == null || typeof item !== "object") {
-        continue;
-      }
-
-      const content = (item as { content?: unknown[] }).content;
-      if (Array.isArray(content) === false) {
-        continue;
-      }
-
-      for (const block of content) {
-        if (block == null || typeof block !== "object") {
-          continue;
-        }
-
-        const typedBlock = block as { type?: string; text?: string };
-        if (typedBlock.type === "output_text" && typeof typedBlock.text === "string") {
-          textParts.push(typedBlock.text);
-        }
-      }
-    }
-
-    return textParts.join("\n").trim();
-  }
-
-  return "";
+  return parts.join("\n").trim();
 }
 
 function extractJson(text: string): string {
@@ -109,7 +132,15 @@ export async function generateText({
   }
 
   const payload = (await response.json()) as unknown;
-  return readOutputText(payload);
+  const text = readOutputText(payload);
+
+  if (text === "") {
+    const payloadPreview = JSON.stringify(payload, null, 2)?.slice(0, 4000) || "<unserializable payload>";
+    console.error("OpenAI empty text payload", payloadPreview);
+    return null;
+  }
+
+  return text;
 }
 
 export async function generateJson<T>(options: ResponseInput): Promise<T | null> {
