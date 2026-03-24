@@ -17,8 +17,12 @@ export async function generateOpeningMessage(scenario: GeneratedScenario) {
       instructions: [systemRolePrompt.content, homeownerBehaviorPrompt.content].join("\n\n"),
       input: [
         "Write the homeowner opening line for the start of the scenario.",
-        JSON.stringify(scenario, null, 2),
-        "Return only the homeowner opening message."
+        "Make it sound like a real person in a real house, not a template.",
+        "Mention one concrete household detail, what happened, and why they called now.",
+        "Do not start every opening with the same greeting.",
+        "Do not repeat raw field names like urgency levels or category labels.",
+        "Return only the homeowner opening message.",
+        JSON.stringify(scenario, null, 2)
       ].join("\n\n"),
       maxOutputTokens: 140
     });
