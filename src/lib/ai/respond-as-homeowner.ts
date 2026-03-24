@@ -7,6 +7,11 @@ import { systemRolePrompt } from "@/lib/prompts/system-role";
 
 type TranscriptTurn = Pick<ScenarioTurn, "speaker" | "messageText">;
 
+type HomeownerReply = {
+  message: string;
+  source: "model" | "fallback_no_key" | "fallback_empty" | "fallback_error";
+};
+
 function countTurns(turns: TranscriptTurn[], speaker: TranscriptTurn["speaker"]) {
   return turns.filter((turn) => turn.speaker === speaker).length;
 }
@@ -41,8 +46,16 @@ function optionCount(turns: TranscriptTurn[]) {
 function trustLevel(turns: TranscriptTurn[]) {
   const techText = joinedTechnicianText(turns);
   const discovery = discoveryCount(turns);
-  const hasPlainLanguage = techText.includes("safe") || techText.includes("risk") || techText.includes("happen if") || techText.includes("could fail");
-  const hasRapport = techText.includes("thank") || techText.includes("appreciate") || techText.includes("glad") || techText.includes("walk you through");
+  const hasPlainLanguage =
+    techText.includes("safe") ||
+    techText.includes("risk") ||
+    techText.includes("happen if") ||
+    techText.includes("could fail");
+  const hasRapport =
+    techText.includes("thank") ||
+    techText.includes("appreciate") ||
+    techText.includes("glad") ||
+    techText.includes("walk you through");
 
   if (discovery >= 3 && hasPlainLanguage && hasRapport) {
     return "high";
@@ -148,7 +161,7 @@ function latestHomeownerTurn(turns: TranscriptTurn[]) {
   return homeownerTurns[homeownerTurns.length - 1]?.messageText || "";
 }
 
-function fallbackResponse(input: {
+function fallbackMessage(input: {
   scenario: GeneratedScenario;
   technicianMessage: string;
   priorTurns: TranscriptTurn[];
@@ -176,9 +189,12 @@ export async function respondAsHomeowner(input: {
   scenario: GeneratedScenario;
   technicianMessage: string;
   priorTurns: TranscriptTurn[];
-}) {
+}): Promise<HomeownerReply> {
   if (aiClient.ready === false) {
-    return fallbackResponse(input);
+    return {
+      message: fallbackMessage(input),
+      source: "fallback_no_key"
+    };
   }
 
   const transcript = input.priorTurns
@@ -225,8 +241,21 @@ export async function respondAsHomeowner(input: {
       maxOutputTokens: 220
     });
 
-    return response?.trim() || fallbackResponse(input);
+    if (response == null || response.trim() === "") {
+      return {
+        message: fallbackMessage(input),
+        source: "fallback_empty"
+      };
+    }
+
+    return {
+      message: response.trim(),
+      source: "model"
+    };
   } catch {
-    return fallbackResponse(input);
+    return {
+      message: fallbackMessage(input),
+      source: "fallback_error"
+    };
   }
 }

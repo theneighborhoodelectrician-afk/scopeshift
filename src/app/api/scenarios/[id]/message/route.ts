@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   });
 
-  const homeownerResponse = await respondAsHomeowner({
+  const homeownerReply = await respondAsHomeowner({
     scenario: {
       scenario_title: session.scenarioTitle,
       visible_problem: session.visibleProblem,
@@ -66,8 +66,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       scenarioSessionId: session.id,
       turnIndex: nextIndex + 1,
       speaker: "homeowner",
-      messageText: homeownerResponse,
-      metadataJson: { objection_style: session.objectionStyle }
+      messageText: homeownerReply.message,
+      metadataJson: {
+        objection_style: session.objectionStyle,
+        response_source: homeownerReply.source
+      }
     }
   });
 
@@ -96,7 +99,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   return NextResponse.json({
-    homeowner_response: homeownerResponse,
+    homeowner_response: homeownerReply.message,
+    response_source: homeownerReply.source,
     coach_hint: coachHint,
     turn_analysis: {
       discovery_detected: analysis.discovery_detected,
