@@ -1,10 +1,5 @@
-import { Card } from "@/components/ui/card";
+import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
-  return (
-    <Card className="mx-auto max-w-xl space-y-4">
-      <h1 className="text-3xl font-semibold">Login</h1>
-      <p className="text-sm text-slate">Connect this form to `POST /api/auth/login`.</p>
-    </Card>
-  );
+  return <LoginForm />;
 }

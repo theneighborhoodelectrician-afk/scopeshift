@@ -1,11 +1,5 @@
-import { DifficultySelector } from "@/components/scenario/difficulty-selector";
-import { CoachModeToggle } from "@/components/scenario/coach-mode-toggle";
+import { RandomPracticeLauncher } from "@/components/scenario/random-practice-launcher";
 
 export default function RandomPracticePage() {
-  return (
-    <main className="grid gap-6 md:grid-cols-2">
-      <DifficultySelector />
-      <CoachModeToggle />
-    </main>
-  );
+  return <RandomPracticeLauncher />;
 }

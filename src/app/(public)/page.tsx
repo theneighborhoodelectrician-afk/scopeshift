@@ -14,7 +14,7 @@ export default function HomePage() {
               AI-powered role-play for residential service technicians, with realistic homeowners, live coaching, post-scenario scoring, and progress tracking.
             </p>
             <div className="flex gap-3">
-              <Link href="/signup"><Button>Start Training</Button></Link>
+              <Link href="/practice/random"><Button>Start Training</Button></Link>
               <Link href="/dashboard"><Button className="bg-white text-ink hover:bg-mist">View Dashboard</Button></Link>
             </div>
           </div>
