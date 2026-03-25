@@ -50,7 +50,9 @@ function trustLevel(turns: TranscriptTurn[]) {
     techText.includes("safe") ||
     techText.includes("risk") ||
     techText.includes("happen if") ||
-    techText.includes("could fail");
+    techText.includes("could fail") ||
+    techText.includes("means") ||
+    techText.includes("because");
   const hasRapport =
     techText.includes("thank") ||
     techText.includes("appreciate") ||
@@ -88,6 +90,43 @@ function objectionStage(turns: TranscriptTurn[]) {
   return "curiosity";
 }
 
+function scopeExpansionOpportunity(scenario: GeneratedScenario) {
+  const hidden = scenario.hidden_problem;
+
+  if (hidden === "aging panel") {
+    return "The larger professional solution may involve panel reliability, cleanup, or upgrade work rather than a tiny isolated repair.";
+  }
+  if (hidden === "double tapped breakers") {
+    return "The larger professional solution may involve panel correction and safety cleanup rather than just addressing the symptom.";
+  }
+  if (hidden === "no surge protection") {
+    return "The larger professional solution may involve whole-home protection while the technician is already onsite.";
+  }
+  if (hidden === "open grounds") {
+    return "The larger professional solution may involve correcting grounding and explaining safety implications beyond the visible device.";
+  }
+  if (hidden === "overloaded circuit") {
+    return "The larger professional solution may involve a dedicated circuit or load separation, not just resetting the problem.";
+  }
+  if (hidden === "outdated wiring") {
+    return "The larger professional solution may involve wiring correction or broader safety updates in this area of the home.";
+  }
+  if (hidden === "no dedicated circuit") {
+    return "The larger professional solution may involve adding a dedicated circuit for how the homeowner uses the space now or plans to use it later.";
+  }
+  if (hidden === "unsafe temporary repair") {
+    return "The larger professional solution may involve replacing a temporary fix with a real corrective repair before it causes another problem.";
+  }
+  if (hidden === "capacity limitation") {
+    return "The larger professional solution may involve future-ready capacity work rather than only solving the immediate symptom.";
+  }
+  if (hidden === "panel brand reliability concern") {
+    return "The larger professional solution may involve a reliability conversation about the service equipment, not only the current complaint.";
+  }
+
+  return "The larger professional solution may involve a broader safety, reliability, or capacity conversation while the technician is already there.";
+}
+
 function privateBackstory(scenario: GeneratedScenario) {
   const pieces: string[] = [];
 
@@ -105,6 +144,8 @@ function privateBackstory(scenario: GeneratedScenario) {
     pieces.push("The homeowner called because the issue became concrete enough to stop putting off.");
   }
 
+  pieces.push(scopeExpansionOpportunity(scenario));
+
   if (scenario.hidden_motivation === "preparing for guests") {
     pieces.push("Privately, guests are coming soon and the homeowner wants the house to feel under control.");
   } else if (scenario.hidden_motivation === "worried about family safety") {
@@ -114,7 +155,7 @@ function privateBackstory(scenario: GeneratedScenario) {
   } else if (scenario.hidden_motivation === "needs solution today") {
     pieces.push("Privately, timing matters a lot today even if the homeowner does not say that right away.");
   } else if (scenario.hidden_motivation === "does not trust upsells") {
-    pieces.push("Privately, the homeowner is on guard for anything that feels bigger than the original call.");
+    pieces.push("Privately, the homeowner is on guard for anything that feels bigger than the original call unless the explanation really connects the dots.");
   } else if (scenario.hidden_motivation === "bad experience with contractor") {
     pieces.push("Privately, a past contractor experience makes the homeowner slower to trust and more sensitive to vague explanations.");
   }
@@ -169,20 +210,25 @@ function fallbackMessage(input: {
   const analysis = analyzeTurn(input.technicianMessage);
   const trust = trustLevel(input.priorTurns);
   const problem = input.scenario.visible_problem;
+  const hiddenDirection = scopeExpansionOpportunity(input.scenario).toLowerCase();
 
   if (analysis.discovery_detected) {
     if (trust === "low") {
-      return "Sure, I can answer that. I just want to understand whether this is a small issue or something bigger going on behind the " + problem + ".";
+      return "Sure, I can answer that. I mostly need to understand whether this " + problem + " is just the symptom or whether it points to something bigger we should handle while you are already here.";
     }
 
-    return "That is fair. I can give you a little more background if it helps, because I would rather figure out why this started than keep guessing at it.";
+    return "That helps. I can give you more background, because I would rather know whether this is a one-spot issue or part of a larger problem in the house.";
   }
 
   if (analysis.option_count_detected > 0) {
-    return "I am following you so far, but I still need to understand what is actually causing it before I know how serious that sounds.";
+    return "I am following you, but before I think about options I still need to understand what this means for the house and whether it is really a bigger issue worth taking care of now.";
   }
 
-  return "Can you help me understand what you think is going on here, in plain language?";
+  if (input.technicianMessage.toLowerCase().includes("safe") || input.technicianMessage.toLowerCase().includes("fine")) {
+    return "Can you connect that for me in plain language? I am trying to understand whether this is actually small or if it could turn into something bigger.";
+  }
+
+  return "Can you help me understand what you think is going on here, in plain language, and whether this sounds like a small fix or something bigger we should take care of while you are here?";
 }
 
 export async function respondAsHomeowner(input: {
@@ -199,7 +245,8 @@ export async function respondAsHomeowner(input: {
 
   const transcript = input.priorTurns
     .map((turn) => turn.speaker.toUpperCase() + ": " + turn.messageText)
-    .join("\n");
+    .join("
+");
 
   const stateSummary = [
     "Trust level: " + trustLevel(input.priorTurns),
@@ -208,10 +255,14 @@ export async function respondAsHomeowner(input: {
     "Best option depth shown so far: " + String(optionCount(input.priorTurns)),
     "Homeowner voice: " + personaVoice(input.scenario.homeowner_personality),
     "Private backstory: " + privateBackstory(input.scenario),
+    "Hidden scope opportunity: " + scopeExpansionOpportunity(input.scenario),
     "Last homeowner message: " + (latestHomeownerTurn(input.priorTurns) || "None yet")
-  ].join("\n");
+  ].join("
+");
 
-  const instructions = [systemRolePrompt.content, homeownerBehaviorPrompt.content].join("\n\n");
+  const instructions = [systemRolePrompt.content, homeownerBehaviorPrompt.content].join("
+
+");
   const prompt = [
     "Current scenario:",
     JSON.stringify(input.scenario, null, 2),
@@ -227,12 +278,14 @@ export async function respondAsHomeowner(input: {
     "",
     "Reply as the homeowner only.",
     "Respond to what the technician just said, not to the training system.",
-    "Carry forward memory, emotion, and trust from the conversation so far.",
+    "Carry forward memory, emotion, trust, and hesitation from the conversation so far.",
+    "Keep the live issue grounded in this house, but let the homeowner care about whether it points to a larger problem worth addressing while the technician is already onsite.",
     "Use one concrete household detail or concern when it feels natural.",
-    "Ask a real-life follow-up question if the technician is unclear, vague, or too technical.",
+    "Ask a real-life follow-up question if the technician is unclear, vague, too technical, or not connecting the symptom to the larger picture.",
     "Do not repeat the same concern word-for-word unless that would happen naturally.",
     "Do not add labels, bullets, coaching, or explanation."
-  ].join("\n");
+  ].join("
+");
 
   try {
     const response = await generateText({

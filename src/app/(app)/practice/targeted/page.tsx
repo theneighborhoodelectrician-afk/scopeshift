@@ -1,9 +1,5 @@
-import { PracticePresetForm } from "@/components/presets/practice-preset-form";
+import { TargetedPracticeLauncher } from "@/components/scenario/targeted-practice-launcher";
 
 export default function TargetedPracticePage() {
-  return (
-    <main>
-      <PracticePresetForm />
-    </main>
-  );
+  return <TargetedPracticeLauncher />;
 }

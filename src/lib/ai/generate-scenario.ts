@@ -4,130 +4,252 @@ import { hiddenProblems } from "@/lib/constants/hidden-problems";
 import { homeownerPersonalities } from "@/lib/constants/personalities";
 import { hiddenMotivations } from "@/lib/constants/motivations";
 import { objectionStyles } from "@/lib/constants/objection-styles";
+import { targetedPracticeTracks } from "@/lib/constants/targeted-practice-tracks";
 import { getRecentScenarioMemory } from "@/lib/scenario/anti-repetition";
 import { titleCase } from "@/lib/utils";
 import type { GeneratedScenario } from "@/types/scenario";
 
-const urgencyLevels = ["low", "moderate", "high", "immediate_same_day"];
-const discoveryTopics = [
-  "timeline",
-  "home age",
-  "future renovation plans",
-  "decision makers",
+const urgencyLevels = ["moderate", "high", "immediate_same_day"];
+const defaultDiscoveryTopics = [
+  "reason for calling today",
+  "how long the issue has been happening",
+  "home age and panel history",
+  "future electrical plans",
+  "who helps make the decision",
   "safety concerns",
-  "budget expectations",
-  "reason for call today"
+  "budget range and priority"
 ];
 
 const categoryVisibleProblemMap: Record<string, string[]> = {
-  outlet_issue: ["dead outlet", "exterior outlet failure"],
-  surge_protection: ["partial power loss", "breaker tripping"],
-  panel_upgrade: ["breaker tripping", "partial power loss", "flickering lights"],
-  generator_backup: ["generator backup question"],
-  ev_charger: ["EV charger request"],
-  fixture_install: ["fixture install request"],
-  breaker_issue: ["breaker tripping"],
-  partial_power: ["partial power loss"],
-  gfci_issue: ["bathroom GFCI issue"],
-  remodel_prep: ["kitchen remodel prep"]
+  outlet_issue: ["dead outlet", "exterior outlet failure", "bathroom GFCI issue"],
+  surge_protection: ["breaker tripping", "partial power loss", "flickering lights"],
+  panel_upgrade: ["breaker tripping", "flickering lights", "partial power loss"],
+  generator_backup: ["generator backup question", "partial power loss", "flickering lights"],
+  ev_charger: ["EV charger request", "kitchen remodel prep"],
+  fixture_install: ["fixture install request", "kitchen remodel prep"],
+  breaker_issue: ["breaker tripping", "bathroom GFCI issue", "dead outlet"],
+  partial_power: ["partial power loss", "flickering lights"],
+  gfci_issue: ["bathroom GFCI issue", "dead outlet"],
+  remodel_prep: ["kitchen remodel prep", "fixture install request", "EV charger request"]
+};
+
+const categoryHiddenProblemMap: Record<string, string[]> = {
+  outlet_issue: ["open grounds", "outdated wiring", "unsafe temporary repair"],
+  surge_protection: ["no surge protection", "aging panel", "panel brand reliability concern"],
+  panel_upgrade: ["aging panel", "double tapped breakers", "capacity limitation", "outdated wiring"],
+  generator_backup: ["capacity limitation", "aging panel", "no dedicated circuit"],
+  ev_charger: ["capacity limitation", "no dedicated circuit", "aging panel"],
+  fixture_install: ["outdated wiring", "open grounds", "unsafe temporary repair"],
+  breaker_issue: ["overloaded circuit", "double tapped breakers", "no dedicated circuit"],
+  partial_power: ["aging panel", "panel brand reliability concern", "unsafe temporary repair"],
+  gfci_issue: ["open grounds", "outdated wiring", "unsafe temporary repair"],
+  remodel_prep: ["capacity limitation", "outdated wiring", "no dedicated circuit"]
+};
+
+const categoryMotivationMap: Record<string, string[]> = {
+  outlet_issue: ["wants long-term peace of mind", "worried about family safety", "planning to sell home"],
+  surge_protection: ["recent storm concern", "worried about family safety", "wants long-term peace of mind"],
+  panel_upgrade: ["worried about family safety", "planning to sell home", "wants long-term peace of mind"],
+  generator_backup: ["needs solution today", "recent storm concern", "wants long-term peace of mind"],
+  ev_charger: ["needs solution today", "planning to sell home", "wants long-term peace of mind"],
+  fixture_install: ["preparing for guests", "planning to sell home", "does not trust upsells"],
+  breaker_issue: ["wants cheapest fix", "worried about family safety", "does not trust upsells"],
+  partial_power: ["needs solution today", "worried about family safety", "recent storm concern"],
+  gfci_issue: ["wants cheapest fix", "worried about family safety", "does not trust upsells"],
+  remodel_prep: ["planning to sell home", "preparing for guests", "wants long-term peace of mind"]
+};
+
+const categoryObjectionMap: Record<string, string[]> = {
+  outlet_issue: ["pushes back on price", "minimizes issue importance", "asks many clarification questions"],
+  surge_protection: ["pushes back on price", "minimizes issue importance", "compares another quote"],
+  panel_upgrade: ["pushes back on price", "needs spouse approval", "asks many clarification questions"],
+  generator_backup: ["delays decision", "needs spouse approval", "compares another quote"],
+  ev_charger: ["delays decision", "compares another quote", "pushes back on price"],
+  fixture_install: ["minimizes issue importance", "pushes back on price", "delays decision"],
+  breaker_issue: ["minimizes issue importance", "pushes back on price", "asks many clarification questions"],
+  partial_power: ["asks many clarification questions", "needs spouse approval", "pushes back on price"],
+  gfci_issue: ["minimizes issue importance", "pushes back on price", "asks many clarification questions"],
+  remodel_prep: ["delays decision", "needs spouse approval", "compares another quote"]
+};
+
+const categoryBestPathMap: Record<string, string[]> = {
+  outlet_issue: [
+    "Acknowledge the small entry issue, then discover what else in the home has felt off.",
+    "Connect outlet symptoms to grounding, wiring age, and broader safety confidence.",
+    "Present a minimal repair, a safer corrective option, and a longer-term cleanup path."
+  ],
+  surge_protection: [
+    "Tie the current nuisance issue to storm exposure, electronics risk, and protection gaps.",
+    "Explain what could happen the next time the home takes a hit.",
+    "Frame surge protection as a logical while-we-are-here upgrade, not a random add-on."
+  ],
+  panel_upgrade: [
+    "Use the original complaint to uncover age, reliability, and future capacity concerns.",
+    "Show why recurring symptoms point back to the panel or service equipment.",
+    "Present cleanup, correction, and full upgrade paths with the recommended path clearly defined."
+  ],
+  generator_backup: [
+    "Start with outage pain and what the homeowner could not do last time.",
+    "Discover what absolutely has to work in the next outage.",
+    "Position backup power as part of a broader reliability and readiness solution."
+  ],
+  ev_charger: [
+    "Use the charger request to uncover what else the homeowner wants to add later.",
+    "Educate around service capacity, panel room, and future electrical demand.",
+    "Present a make-it-work option, a recommended infrastructure option, and a best future-ready option."
+  ],
+  fixture_install: [
+    "Treat the install request as an opening to ask what shape the wiring and boxes are in.",
+    "Discover whether convenience, resale, or safety upgrades make sense while access is easy.",
+    "Present installation-only, corrective, and upgrade options."
+  ],
+  breaker_issue: [
+    "Uncover what the breaker is feeding, what changed, and what else the homeowner wants to run later.",
+    "Explain overload and shared-use consequences in plain language.",
+    "Turn the breaker nuisance into a dedicated-circuit conversation with clear choices."
+  ],
+  partial_power: [
+    "Use the urgency of partial power to justify a bigger reliability and safety conversation.",
+    "Find out whether this has happened before and what equipment the homeowner is worried about.",
+    "Move from diagnosis to a broader correction path when the evidence supports it."
+  ],
+  gfci_issue: [
+    "Use the tripping device as an entry point into moisture, grounding, and wiring integrity.",
+    "Find out whether this problem is isolated or part of a bigger safety picture.",
+    "Present a small repair, a safer corrective path, and a best long-term protection option."
+  ],
+  remodel_prep: [
+    "Discover the real project scope and what else the homeowner wants the space to support.",
+    "Use timing and access to justify doing the larger electrical work once.",
+    "Frame the upgrade path around convenience, resale, and avoiding costly rework later."
+  ]
+};
+
+const categoryFailureMap: Record<string, string[]> = {
+  outlet_issue: [
+    "Fixing only the dead device without checking why the circuit got there.",
+    "Talking repair before learning what else in the home feels unreliable."
+  ],
+  surge_protection: [
+    "Treating surge protection like a random accessory instead of a consequence-based recommendation.",
+    "Talking price before making risk feel real."
+  ],
+  panel_upgrade: [
+    "Staying at the symptom level and never connecting the complaint to the panel condition.",
+    "Presenting a full upgrade before earning trust through discovery."
+  ],
+  generator_backup: [
+    "Talking equipment before learning what the homeowner actually needs during an outage.",
+    "Skipping the emotional pain of recent outages."
+  ],
+  ev_charger: [
+    "Installing for today without discussing tomorrow's electrical demand.",
+    "Missing the chance to frame future-ready infrastructure."
+  ],
+  fixture_install: [
+    "Treating the visit like install labor only.",
+    "Missing the open-access opportunity for broader improvements."
+  ],
+  breaker_issue: [
+    "Resetting or replacing without discovering what is on the circuit.",
+    "Never presenting the dedicated-circuit solution as the professional answer."
+  ],
+  partial_power: [
+    "Reducing a larger reliability issue to a one-line fix.",
+    "Skipping consequence framing because the problem feels obvious."
+  ],
+  gfci_issue: [
+    "Treating nuisance tripping like an annoyance instead of a safety clue.",
+    "Leaving the homeowner with no broader understanding of risk."
+  ],
+  remodel_prep: [
+    "Missing the best timing to expand scope before construction starts.",
+    "Failing to ask what the homeowner wants the space to support later."
+  ]
 };
 
 const openingScenarios: Record<string, string[]> = {
   "dead outlet": [
-    "One of the outlets in the living room stopped working this morning, and resetting things did not do anything.",
-    "We noticed an outlet along the kitchen wall is dead, and today both plugs on it quit at the same time.",
-    "There is an outlet in the guest room that has not been working right, and now it is not doing anything at all."
+    "The outlet is why we called, but since you are here I also want to make sure there is not something bigger going on behind it.",
+    "This dead outlet was the trigger, but honestly I am hoping you can tell me whether it points to a larger issue in this part of the house."
   ],
   "breaker tripping": [
-    "The breaker has been tripping off and on, and today it kicked again when we had a couple kitchen appliances running.",
-    "We keep losing the same circuit, and this morning it tripped twice while we were just using things normally.",
-    "The breaker has been acting up for a little while, but today it started shutting off sooner than usual."
+    "The breaker keeps tripping, and I have a feeling this is turning into more than a simple nuisance.",
+    "We called for the tripping breaker, but I really want to know whether this is a small fix or a sign the system is struggling."
   ],
   "flickering lights": [
-    "The lights in one part of the house keep flickering, and it has been more noticeable since this morning.",
-    "We have a couple lights that dim and flicker when other things turn on, and today it felt worse than normal.",
-    "The lights in the back rooms have been fluttering off and on, so we wanted somebody to take a look."
+    "The flickering lights are the reason for the call, but I would love an honest read on whether this points to something bigger.",
+    "The lights have been acting up, and since you are already here I want to know if this is the kind of thing we should get ahead of."
   ],
   "fixture install request": [
-    "We wanted to have a new fixture installed, and before we buy the wrong thing I wanted to make sure the wiring is in good shape.",
-    "We are replacing a light fixture and wanted to have it done right instead of guessing our way through it.",
-    "We have a fixture we want to put in, and I figured it made sense to have someone look at the box and wiring first."
+    "We originally wanted the fixture installed, but while you are here I would rather know whether the wiring around it is really where it should be.",
+    "The install is the immediate reason for the visit, but I do not want to miss a larger issue if the wiring is dated."
   ],
   "EV charger request": [
-    "We are looking at getting an EV charger set up, and I wanted to know what the house can actually handle.",
-    "We have an electric vehicle coming soon, so I wanted someone to tell us what it would take to add a charger here.",
-    "I am trying to plan for an EV charger, but I do not know if the panel has enough room or capacity."
+    "The charger is what got you here, but what I really need to know is whether this house is ready for everything we want to add.",
+    "I am asking about the EV charger, but I suspect the bigger question is whether the panel can support our future plans."
   ],
   "generator backup question": [
-    "After the last outage, we started thinking seriously about backup power and wanted to understand what makes sense for this house.",
-    "We have been talking about a generator after a couple recent outages, and I wanted to see what our options really are.",
-    "We wanted to ask about backup power because the last time the neighborhood lost power it was a mess here."
+    "We started with the generator question, but really I want to know how prepared this house is the next time we lose power.",
+    "Backup power is the reason for the visit, but I am hoping you can tell me whether the electrical setup is ready for that kind of upgrade."
   ],
   "partial power loss": [
-    "Part of the house has power and part of it does not, and it started acting strange earlier today.",
-    "We have a few rooms that seem half on and half off right now, so I wanted somebody out before it gets worse.",
-    "Some circuits are working and some are not, and that is not something I wanted to let sit."
+    "Part of the house lost power, and now I am wondering if this is one of those problems that points to something bigger.",
+    "The partial power issue is what pushed me to call, but I do not want to keep fixing symptoms if there is a larger problem behind it."
   ],
   "bathroom GFCI issue": [
-    "The bathroom outlet keeps tripping, and today it would not stay reset long enough to use it.",
-    "We have a GFCI in the bathroom that has been touchy, and this morning it started kicking out again.",
-    "The bathroom outlet keeps shutting off, and now it is to the point where I do not trust it."
+    "The bathroom outlet keeps acting up, and while you are here I want to know if it is just that device or something broader.",
+    "We called because the GFCI will not behave, but I am hoping you can tell me if that points back to a bigger safety issue."
   ],
   "kitchen remodel prep": [
-    "We are getting ready for a kitchen remodel and wanted to know what needs to be updated before the walls get opened up.",
-    "We are planning some kitchen work and I wanted to understand whether the electrical side is ready for that.",
-    "Before we get too far into this remodel, I wanted someone to tell us what the kitchen can support."
+    "The remodel is what started the conversation, but I want to make sure we are not missing bigger electrical work while everything is open.",
+    "We are talking kitchen plans, but I would rather find out now what bigger electrical work makes sense before we get too far."
   ],
   "exterior outlet failure": [
-    "The outside outlet stopped working, and I noticed it when I tried to plug something in this morning.",
-    "We have an exterior outlet that is not working anymore, and I wanted to make sure there is not a bigger issue behind it.",
-    "The outlet outside by the patio quit on us, and with the weather changing I figured we should get it checked."
+    "The outside outlet is the small problem, but if there is a larger issue tied to it I would rather know while you are here.",
+    "We called because the exterior outlet quit, but I am open to hearing if it points to a broader issue worth taking care of."
   ]
 };
 
 const urgencyAddOns: Record<string, string[]> = {
-  low: [
-    "It is not a full emergency, but I did not want to ignore it.",
-    "It has been on the list, and I figured now was a good time to get ahead of it."
-  ],
   moderate: [
-    "It is becoming regular enough that I wanted to deal with it before it turns into a bigger headache.",
-    "I would rather handle it now than wait for it to fail at the worst time."
+    "It is becoming regular enough that I do not want to keep patching small things and miss the bigger answer.",
+    "It feels like the kind of problem that gets more expensive if we keep waiting."
   ],
   high: [
-    "It has been happening more often, so I wanted somebody out before it gets worse.",
-    "It is definitely getting my attention now, which is why I called."
+    "It has my attention now, and if there is a better long-term answer I would rather hear it while you are here.",
+    "This stopped feeling like a minor annoyance, which is why I wanted someone out before it snowballs."
   ],
   immediate_same_day: [
-    "I really wanted somebody out today because it changed fast and I do not want to sit on it.",
-    "Today it crossed the line from annoying to something I wanted checked right away."
+    "I really wanted someone out today because if this points to bigger work I want to know now, not after another failure.",
+    "Today is the day I decided I would rather deal with the real issue than keep dancing around the symptom."
   ]
 };
 
 const personalityAddOns: Record<string, string[]> = {
   budget_sensitive: [
-    "I am hoping we can understand what is actually needed before we do anything major.",
-    "I just want to be smart about it and not throw money at the wrong fix."
+    "I am open to the right work if it really solves something bigger, I just need to understand what is actually necessary.",
+    "If you think there is a larger issue, walk me through why it matters before we talk money."
   ],
   trust_first: [
-    "If you can walk me through what you are seeing in plain language, that would help a lot.",
-    "I mostly just want an honest read on what is going on."
+    "If you can explain it clearly, I am willing to hear what the bigger picture looks like.",
+    "I mostly want an honest read on whether the small problem is attached to something more important."
   ],
   safety_motivated: [
-    "Any time something electrical starts acting differently, I start thinking about whether it is safe.",
-    "My biggest thing is making sure there is not a safety issue here."
+    "My biggest concern is whether this is turning into a safety problem for the family.",
+    "If this ties into a bigger safety issue, I would rather know that than just bandaid it."
   ],
   comparison_shopper: [
-    "I am trying to understand what the right solution looks like before I make a decision.",
-    "I have heard a few different opinions already, so I am trying to get a clear answer."
+    "I do not mind hearing larger options, I just want to understand which one is actually the right fit.",
+    "If there is a smarter fix while you are already here, I am willing to hear it as long as it makes sense."
   ],
   busy_homeowner: [
-    "I have a lot going on today, so I was hoping to get a straightforward read on it.",
-    "I wanted to catch it now while I actually had someone here to look at it."
+    "I do not have time to redo work twice, so if there is a bigger fix that should happen now I want the straight version.",
+    "If we are going to handle it, I would rather handle the right scope once."
   ],
   skeptical_homeowner: [
-    "I just want to make sure we are talking about the real problem and not more than that.",
-    "I have had people overcomplicate things before, so I am hoping for a straight answer."
+    "I am cautious about anything sounding bigger than the original call, so I need you to connect the dots for me.",
+    "If there is more going on, explain how you got there so it does not feel like a leap."
   ]
 };
 
@@ -159,11 +281,51 @@ function openingMessage(scenario: Pick<GeneratedScenario, "visible_problem" | "u
     scenario.homeowner_personality
   ]);
 
-  const opener = pickBySeed(openingScenarios[scenario.visible_problem] || ["We wanted to have someone take a look at an electrical issue we have been dealing with."], seed);
-  const urgency = pickBySeed(urgencyAddOns[scenario.urgency_level] || urgencyAddOns.moderate, seed, 1);
+  const opener = pickBySeed(openingScenarios[scenario.visible_problem] || ["We called for a smaller issue, but I am open to understanding the larger picture if there is one."], seed);
+  const urgency = pickBySeed(urgencyAddOns[scenario.urgency_level] || urgencyAddOns.high, seed, 1);
   const personality = pickBySeed(personalityAddOns[scenario.homeowner_personality] || personalityAddOns.trust_first, seed, 2);
 
   return [opener, urgency, personality].join(" ");
+}
+
+function buildBestPath(category: string | undefined) {
+  const categoryPath = category ? categoryBestPathMap[category] : null;
+  const path = categoryPath ?? [
+    "Treat the visible issue as the doorway, not the whole job.",
+    "Discover what else the homeowner wants to support, avoid, or solve while you are already in the home.",
+    "Present three options that move from symptom relief to the full professional solution."
+  ];
+
+  return [
+    "Build trust and slow down before jumping to a fix.",
+    `Cover discovery topics: ${defaultDiscoveryTopics.join(", ")}.`,
+    ...path,
+    "Ask a commitment question tied to doing the right work while you are already onsite."
+  ];
+}
+
+function buildFailureConditions(category: string | undefined) {
+  const categoryFailures = category ? categoryFailureMap[category] : null;
+  const failures = categoryFailures ?? [
+    "Treating the visible issue like the whole job.",
+    "Skipping future-plan discovery.",
+    "Talking price before consequence and value are clear."
+  ];
+
+  return [
+    ...failures,
+    "Presenting only one option.",
+    "Ending without a commitment question."
+  ];
+}
+
+function scenarioTitle(visibleProblem: string, category: string | undefined, neighborhoodType: string | null) {
+  const track = targetedPracticeTracks.find((item) => item.category === category);
+  if (track) {
+    return `${track.label} from ${titleCase(visibleProblem)}`;
+  }
+
+  return `${titleCase(visibleProblem)} in ${neighborhoodType ?? "Metro Detroit suburb"}`;
 }
 
 export async function generateScenario(input: {
@@ -182,32 +344,31 @@ export async function generateScenario(input: {
     selectedVisibleProblems = categoryVisibleProblemMap[input.category] ?? visibleProblems;
   }
 
+  const selectedHiddenProblems = input.mode === "targeted" && input.category
+    ? categoryHiddenProblemMap[input.category] ?? hiddenProblems
+    : hiddenProblems;
+  const selectedMotivations = input.mode === "targeted" && input.category
+    ? categoryMotivationMap[input.category] ?? hiddenMotivations
+    : hiddenMotivations;
+  const selectedObjections = input.mode === "targeted" && input.category
+    ? categoryObjectionMap[input.category] ?? objectionStyles
+    : objectionStyles;
+
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const scenario: GeneratedScenario = {
       scenario_title: "",
       visible_problem: randomItem(selectedVisibleProblems),
-      hidden_problem: randomItem(hiddenProblems),
+      hidden_problem: randomItem(selectedHiddenProblems),
       homeowner_personality: randomItem(homeownerPersonalities),
-      hidden_motivation: randomItem(hiddenMotivations),
-      objection_style: randomItem(objectionStyles),
+      hidden_motivation: randomItem(selectedMotivations),
+      objection_style: randomItem(selectedObjections),
       urgency_level: randomItem(urgencyLevels),
-      expected_best_path: [
-        "Build rapport before probing deeper.",
-        `Cover discovery topics: ${discoveryTopics.join(", ")}.`,
-        "Teach consequences before discussing price.",
-        "Present three structured options and ask for a decision."
-      ],
-      failure_conditions: [
-        "Skipping discovery.",
-        "Revealing hidden motivations too early.",
-        "Discussing price before value and consequences are clear.",
-        "Presenting only one option.",
-        "Ending without a commitment question."
-      ],
+      expected_best_path: buildBestPath(input.category),
+      failure_conditions: buildFailureConditions(input.category),
       opening_homeowner_message: "",
       home_age_range: randomItem(["1940s-1960s", "1970s-1990s", "2000s+", "mixed-era home"]),
       neighborhood_type: randomItem(["inner-ring suburb", "growing subdivision", "older established neighborhood"]),
-      spouse_involved: Math.random() > 0.5,
+      spouse_involved: Math.random() > 0.55,
       prior_contractor_seen: Math.random() > 0.65
     };
 
@@ -220,22 +381,22 @@ export async function generateScenario(input: {
       continue;
     }
 
-    scenario.scenario_title = `${titleCase(scenario.visible_problem)} in ${scenario.neighborhood_type}`;
+    scenario.scenario_title = scenarioTitle(scenario.visible_problem, input.category, scenario.neighborhood_type);
     scenario.opening_homeowner_message = openingMessage(scenario);
     return scenario;
   }
 
   const fallbackVisible = selectedVisibleProblems[0] ?? visibleProblems[0];
   const fallbackScenario: GeneratedScenario = {
-    scenario_title: `${titleCase(fallbackVisible)} follow-up`,
+    scenario_title: scenarioTitle(fallbackVisible, input.category, "older established neighborhood"),
     visible_problem: fallbackVisible,
-    hidden_problem: hiddenProblems[0],
+    hidden_problem: selectedHiddenProblems[0] ?? hiddenProblems[0],
     homeowner_personality: homeownerPersonalities[0],
-    hidden_motivation: hiddenMotivations[0],
-    objection_style: objectionStyles[0],
+    hidden_motivation: selectedMotivations[0] ?? hiddenMotivations[0],
+    objection_style: selectedObjections[0] ?? objectionStyles[0],
     urgency_level: urgencyLevels[0],
-    expected_best_path: ["Build rapport.", "Discover motivation.", "Present three options."],
-    failure_conditions: ["Skipping discovery", "Leading with price"],
+    expected_best_path: buildBestPath(input.category),
+    failure_conditions: buildFailureConditions(input.category),
     opening_homeowner_message: "",
     home_age_range: "1970s-1990s",
     neighborhood_type: "older established neighborhood",
