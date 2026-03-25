@@ -210,7 +210,6 @@ function fallbackMessage(input: {
   const analysis = analyzeTurn(input.technicianMessage);
   const trust = trustLevel(input.priorTurns);
   const problem = input.scenario.visible_problem;
-  const hiddenDirection = scopeExpansionOpportunity(input.scenario).toLowerCase();
 
   if (analysis.discovery_detected) {
     if (trust === "low") {
@@ -245,8 +244,7 @@ export async function respondAsHomeowner(input: {
 
   const transcript = input.priorTurns
     .map((turn) => turn.speaker.toUpperCase() + ": " + turn.messageText)
-    .join("
-");
+    .join("\n");
 
   const stateSummary = [
     "Trust level: " + trustLevel(input.priorTurns),
@@ -257,12 +255,9 @@ export async function respondAsHomeowner(input: {
     "Private backstory: " + privateBackstory(input.scenario),
     "Hidden scope opportunity: " + scopeExpansionOpportunity(input.scenario),
     "Last homeowner message: " + (latestHomeownerTurn(input.priorTurns) || "None yet")
-  ].join("
-");
+  ].join("\n");
 
-  const instructions = [systemRolePrompt.content, homeownerBehaviorPrompt.content].join("
-
-");
+  const instructions = [systemRolePrompt.content, homeownerBehaviorPrompt.content].join("\n\n");
   const prompt = [
     "Current scenario:",
     JSON.stringify(input.scenario, null, 2),
@@ -284,8 +279,7 @@ export async function respondAsHomeowner(input: {
     "Ask a real-life follow-up question if the technician is unclear, vague, too technical, or not connecting the symptom to the larger picture.",
     "Do not repeat the same concern word-for-word unless that would happen naturally.",
     "Do not add labels, bullets, coaching, or explanation."
-  ].join("
-");
+  ].join("\n");
 
   try {
     const response = await generateText({
