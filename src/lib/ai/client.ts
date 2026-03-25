@@ -3,6 +3,7 @@ type ResponseInput = {
   input: string;
   model?: string;
   maxOutputTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
 };
 
 function collectPossibleText(value: unknown): string[] {
@@ -105,7 +106,8 @@ export async function generateText({
   instructions,
   input,
   model,
-  maxOutputTokens = 500
+  maxOutputTokens = 500,
+  reasoningEffort = "low"
 }: ResponseInput): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey == null || apiKey === "") {
@@ -122,7 +124,8 @@ export async function generateText({
       model: model || aiClient.defaultModel,
       instructions,
       input,
-      max_output_tokens: maxOutputTokens
+      max_output_tokens: maxOutputTokens,
+      reasoning: { effort: reasoningEffort }
     })
   });
 
@@ -133,6 +136,15 @@ export async function generateText({
 
   const payload = (await response.json()) as unknown;
   const text = readOutputText(payload);
+
+  if (typeof payload === "object" && payload != null) {
+    const typedPayload = payload as Record<string, unknown>;
+    const status = typedPayload.status;
+    if (status === "incomplete") {
+      const incompleteDetails = JSON.stringify(typedPayload.incomplete_details ?? null);
+      console.error("OpenAI incomplete response", incompleteDetails);
+    }
+  }
 
   if (text === "") {
     const payloadPreview = JSON.stringify(payload, null, 2)?.slice(0, 4000) || "<unserializable payload>";

@@ -238,7 +238,8 @@ export async function respondAsHomeowner(input: {
     const response = await generateText({
       instructions,
       input: prompt,
-      maxOutputTokens: 220
+      maxOutputTokens: 420,
+      reasoningEffort: "low"
     });
 
     if (response == null || response.trim() === "") {

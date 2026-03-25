@@ -24,7 +24,8 @@ export async function generateOpeningMessage(scenario: GeneratedScenario) {
         "Return only the homeowner opening message.",
         JSON.stringify(scenario, null, 2)
       ].join("\n\n"),
-      maxOutputTokens: 140
+      maxOutputTokens: 220,
+      reasoningEffort: "low"
     });
 
     return response?.trim() || fallbackOpeningMessage(scenario);
