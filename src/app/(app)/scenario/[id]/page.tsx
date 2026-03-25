@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import type { ChatMessage } from "@/components/scenario/chat-window";
-import { ScenarioHeader } from "@/components/scenario/scenario-header";
 import { ScenarioSessionClient } from "@/components/scenario/scenario-session-client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -71,7 +70,7 @@ export default async function ScenarioPage({ params }: { params: Promise<{ id: s
     return collection;
   }, []);
 
-  const subtitle = `${formatMode(session.difficultyMode)} · coach ${session.coachMode} · ${session.visibleProblem}`;
+  const subtitle = formatMode(session.difficultyMode) + " · coach " + session.coachMode + " · " + session.visibleProblem;
   const initialResults = session.score && session.feedback
     ? {
         scores: {
@@ -95,13 +94,14 @@ export default async function ScenarioPage({ params }: { params: Promise<{ id: s
 
   return (
     <main className="space-y-6">
-      <ScenarioHeader title={session.scenarioTitle} subtitle={subtitle} />
       <ScenarioSessionClient
         initialCoachHint={getCoachHint(session.coachMode, session.status)}
         initialMessages={messages}
         initialResults={initialResults}
         initiallyCompleted={session.status === "completed"}
         sessionId={session.id}
+        title={session.scenarioTitle}
+        subtitle={subtitle}
       />
     </main>
   );
