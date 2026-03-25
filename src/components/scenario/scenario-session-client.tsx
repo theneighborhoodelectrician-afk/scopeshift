@@ -49,41 +49,26 @@ type CompleteResponse = {
 };
 
 type VoiceState = "idle" | "listening" | "thinking" | "speaking";
+type VoiceConnectionState = "disconnected" | "connecting" | "connected";
 
-type BrowserSpeechRecognition = {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
+type RealtimeEvent = {
+  type?: string;
+  transcript?: string;
+  delta?: string;
+  item_id?: string;
+  response_id?: string;
+  error?: {
+    message?: string;
+  };
+  item?: {
+    id?: string;
+    role?: string;
+    content?: Array<{
+      transcript?: string;
+      text?: string;
+    }>;
+  };
 };
-
-type SpeechRecognitionCtor = new () => BrowserSpeechRecognition;
-
-type SpeechRecognitionAlternativeLike = {
-  transcript: string;
-};
-
-type SpeechRecognitionResultLike = {
-  isFinal: boolean;
-  0: SpeechRecognitionAlternativeLike;
-};
-
-type SpeechRecognitionEventLike = {
-  results: ArrayLike<SpeechRecognitionResultLike>;
-};
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  }
-}
 
 function getLatestMessage(messages: ChatMessage[], speaker: ChatMessage["speaker"]) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -96,9 +81,17 @@ function getLatestMessage(messages: ChatMessage[], speaker: ChatMessage["speaker
   return null;
 }
 
-function getVoiceStatusLabel(voiceState: VoiceState) {
+function getVoiceStatusLabel(connectionState: VoiceConnectionState, voiceState: VoiceState) {
+  if (connectionState === "connecting") {
+    return "Connecting the live call";
+  }
+
+  if (connectionState === "disconnected") {
+    return "Ready to start the live conversation";
+  }
+
   if (voiceState === "listening") {
-    return "Listening for the technician";
+    return "Listening to the technician";
   }
 
   if (voiceState === "thinking") {
@@ -109,7 +102,27 @@ function getVoiceStatusLabel(voiceState: VoiceState) {
     return "Homeowner is speaking";
   }
 
-  return "Ready to start the conversation";
+  return "Live call is active";
+}
+
+function extractTranscript(event: RealtimeEvent) {
+  if (typeof event.transcript === "string" && event.transcript.trim() !== "") {
+    return event.transcript.trim();
+  }
+
+  const content = event.item?.content;
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (typeof part.transcript === "string" && part.transcript.trim() !== "") {
+        return part.transcript.trim();
+      }
+      if (typeof part.text === "string" && part.text.trim() !== "") {
+        return part.text.trim();
+      }
+    }
+  }
+
+  return "";
 }
 
 function VoiceConversationVisual({ voiceState }: { voiceState: VoiceState }) {
@@ -200,83 +213,214 @@ export function ScenarioSessionClient({
   const [isCompleted, setIsCompleted] = useState(initiallyCompleted);
   const [conversationMode, setConversationMode] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceConnectionState, setVoiceConnectionState] = useState<VoiceConnectionState>("disconnected");
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [keyboardFallbackOpen, setKeyboardFallbackOpen] = useState(false);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const spokenMessageIdRef = useRef<string | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const seenTranscriptKeysRef = useRef<Set<string>>(new Set());
 
   const lastHomeownerMessage = useMemo(() => getLatestMessage(messages, "homeowner"), [messages]);
-  const lastTechnicianMessage = useMemo(() => getLatestMessage(messages, "technician"), [messages]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    const recognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    setVoiceSupported(recognitionCtor != null);
+    const supported = typeof RTCPeerConnection !== "undefined" && navigator.mediaDevices?.getUserMedia != null;
+    setVoiceSupported(supported);
   }, []);
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
       if (typeof window !== "undefined") {
         window.speechSynthesis.cancel();
       }
+      stopRealtimeCall();
     };
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
     if (conversationMode === false) {
-      window.speechSynthesis.cancel();
-      setVoiceState((current) => (current === "listening" ? current : "idle"));
+      stopRealtimeCall();
+      setKeyboardFallbackOpen(false);
     }
   }, [conversationMode]);
 
-  function stopListening() {
-    recognitionRef.current?.stop();
+  function appendMessage(message: ChatMessage) {
+    setMessages((current) => {
+      const previous = current[current.length - 1];
+      if (previous && previous.speaker === message.speaker && previous.text === message.text) {
+        return current;
+      }
+      return [...current, message];
+    });
   }
 
-  function speakHomeownerReply(text: string, messageId: string) {
-    if (typeof window === "undefined") {
+  async function persistVoiceTurn(speaker: "technician" | "homeowner", messageText: string) {
+    const response = await fetch("/api/scenarios/" + sessionId + "/voice-turns", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ speaker, messageText })
+    });
+
+    if (response.ok === false) {
       return;
     }
 
-    if (conversationMode === false) {
-      return;
+    const payload = (await response.json()) as { coach_hint?: string | null };
+    if (speaker === "technician") {
+      setCoachHint(payload.coach_hint ?? null);
     }
-
-    if (text.trim() === "") {
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.onstart = () => setVoiceState("speaking");
-    utterance.onend = () => setVoiceState("idle");
-    utterance.onerror = () => setVoiceState("idle");
-
-    spokenMessageIdRef.current = messageId;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
   }
 
-  useEffect(() => {
-    if (lastHomeownerMessage == null) {
+  function stopRealtimeCall() {
+    dataChannelRef.current?.close();
+    dataChannelRef.current = null;
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+
+    const stream = localStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    localStreamRef.current = null;
+
+    const remoteAudio = remoteAudioRef.current;
+    if (remoteAudio) {
+      remoteAudio.pause();
+      remoteAudio.srcObject = null;
+    }
+
+    setVoiceConnectionState("disconnected");
+    setVoiceState("idle");
+  }
+
+  function handleRealtimeEvent(event: RealtimeEvent) {
+    if (event.type == null) {
       return;
     }
 
-    if (spokenMessageIdRef.current === lastHomeownerMessage.id) {
+    if (event.type === "input_audio_buffer.speech_started") {
+      setVoiceState("listening");
       return;
     }
 
-    speakHomeownerReply(lastHomeownerMessage.text, lastHomeownerMessage.id);
-  }, [conversationMode, lastHomeownerMessage]);
+    if (event.type === "input_audio_buffer.speech_stopped") {
+      setVoiceState("thinking");
+      return;
+    }
+
+    if (event.type === "conversation.item.input_audio_transcription.completed") {
+      const transcript = extractTranscript(event);
+      const itemId = event.item_id ?? event.item?.id ?? transcript;
+      const key = "tech-" + itemId + "-" + transcript;
+      if (transcript !== "" && seenTranscriptKeysRef.current.has(key) === false) {
+        seenTranscriptKeysRef.current.add(key);
+        appendMessage({ id: key, speaker: "technician", text: transcript });
+        void persistVoiceTurn("technician", transcript);
+      }
+      return;
+    }
+
+    if (event.type === "response.output_audio_transcript.done") {
+      const transcript = extractTranscript(event);
+      const itemId = event.item_id ?? event.response_id ?? event.item?.id ?? transcript;
+      const key = "homeowner-" + itemId + "-" + transcript;
+      if (transcript !== "" && seenTranscriptKeysRef.current.has(key) === false) {
+        seenTranscriptKeysRef.current.add(key);
+        appendMessage({ id: key, speaker: "homeowner", text: transcript });
+        void persistVoiceTurn("homeowner", transcript);
+      }
+      return;
+    }
+
+    if (event.type === "response.done") {
+      setVoiceState("idle");
+      return;
+    }
+
+    if (event.type === "error") {
+      setError(event.error?.message ?? "The live voice connection ran into an issue.");
+    }
+  }
+
+  async function startRealtimeCall() {
+    if (voiceSupported === false || isCompleted) {
+      return;
+    }
+
+    setError(null);
+    setVoiceConnectionState("connecting");
+    seenTranscriptKeysRef.current = new Set();
+
+    try {
+      const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = localStream;
+
+      const peerConnection = new RTCPeerConnection();
+      peerConnectionRef.current = peerConnection;
+
+      const remoteAudio = new Audio();
+      remoteAudio.autoplay = true;
+      remoteAudio.onplaying = () => setVoiceState("speaking");
+      remoteAudio.onpause = () => setVoiceState((current) => (current === "speaking" ? "idle" : current));
+      remoteAudioRef.current = remoteAudio;
+
+      peerConnection.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      localStream.getTracks().forEach((track) => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      const dataChannel = peerConnection.createDataChannel("oai-events");
+      dataChannelRef.current = dataChannel;
+      dataChannel.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data) as RealtimeEvent;
+          handleRealtimeEvent(parsed);
+        } catch {
+          return;
+        }
+      };
+      dataChannel.onopen = () => {
+        setVoiceConnectionState("connected");
+        setVoiceState("idle");
+      };
+      dataChannel.onclose = () => {
+        setVoiceConnectionState("disconnected");
+        setVoiceState("idle");
+      };
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      const response = await fetch("/api/scenarios/" + sessionId + "/voice-call", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/sdp"
+        },
+        body: offer.sdp ?? ""
+      });
+
+      if (response.ok === false) {
+        const detail = await response.text();
+        throw new Error(detail || "Unable to start the live voice call.");
+      }
+
+      const answerSdp = await response.text();
+      await peerConnection.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    } catch (caughtError) {
+      stopRealtimeCall();
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to start the live voice call.");
+    }
+  }
 
   async function sendTechnicianMessage(message: string) {
     if (message === "" || isCompleted) {
@@ -355,61 +499,6 @@ export function ScenarioSessionClient({
     await sendTechnicianMessage(message);
   }
 
-  function startListening() {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const recognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (recognitionCtor == null) {
-      setError("Voice input is not available in this browser. Use keyboard reply instead.");
-      return;
-    }
-
-    recognitionRef.current?.abort();
-    window.speechSynthesis.cancel();
-
-    const recognition = new recognitionCtor();
-    let finalTranscript = "";
-
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.onstart = () => {
-      setError(null);
-      setVoiceState("listening");
-    };
-    recognition.onresult = (event) => {
-      const transcriptParts: string[] = [];
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        transcriptParts.push(result[0].transcript);
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript + " ";
-        }
-      }
-      setDraft(transcriptParts.join(" ").trim());
-    };
-    recognition.onerror = (event) => {
-      setVoiceState("idle");
-      if (event.error !== "no-speech") {
-        setError("Voice capture ran into an issue. You can try again or use keyboard reply.");
-      }
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      const nextMessage = finalTranscript.trim() || draft.trim();
-      if (nextMessage !== "") {
-        void sendTechnicianMessage(nextMessage);
-      } else {
-        setVoiceState("idle");
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }
-
   async function handleComplete() {
     if (isCompleted) {
       return;
@@ -417,6 +506,7 @@ export function ScenarioSessionClient({
 
     setError(null);
     setIsCompleting(true);
+    stopRealtimeCall();
 
     try {
       const response = await fetch("/api/scenarios/" + sessionId + "/complete", {
@@ -432,7 +522,6 @@ export function ScenarioSessionClient({
       setResults(payload);
       setIsCompleted(true);
       setConversationMode(false);
-      setVoiceState("idle");
       setCoachHint("Scenario complete. Review your scores and coaching notes below.");
       router.refresh();
     } catch {
@@ -504,18 +593,15 @@ export function ScenarioSessionClient({
           <div className="space-y-8">
             <div>
               <p className="text-sm font-medium uppercase tracking-[0.22em] text-cyan-200">Live status</p>
-              <h3 className="mt-3 text-4xl font-semibold leading-tight">{getVoiceStatusLabel(voiceState)}</h3>
+              <h3 className="mt-3 text-4xl font-semibold leading-tight">{getVoiceStatusLabel(voiceConnectionState, voiceState)}</h3>
               <p className="mt-3 max-w-2xl text-base leading-7 text-slate-200">
-                Keep the call natural. Ask what changed today, clarify risk in plain language, and let the homeowner react like a real customer.
+                One tap starts the call. After that, keep talking naturally and let the homeowner respond in real time.
               </p>
             </div>
 
             <div className="space-y-4 rounded-[1.8rem] border border-white/12 bg-white/8 px-5 py-5 backdrop-blur-sm">
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-200">Current homeowner line</p>
-              <p className="text-2xl font-medium leading-10 text-white">{lastHomeownerMessage?.text ?? "The homeowner is ready when you are."}</p>
-              {lastTechnicianMessage ? (
-                <p className="text-sm leading-6 text-slate-300">Last thing you said: {lastTechnicianMessage.text}</p>
-              ) : null}
+              <p className="text-2xl font-medium leading-10 text-white">{lastHomeownerMessage?.text ?? "The homeowner is ready when you start the call."}</p>
             </div>
 
             <ConversationNudge hint={coachHint} />
@@ -530,28 +616,33 @@ export function ScenarioSessionClient({
           <div className="space-y-8">
             <VoiceConversationVisual voiceState={voiceState} />
             <div className="flex flex-col gap-4">
-              <button
-                type="button"
-                disabled={isSending || isCompleting || isCompleted || voiceSupported === false}
-                onClick={voiceState === "listening" ? stopListening : startListening}
-                className={cn(
-                  "rounded-full px-8 py-5 text-base font-semibold transition",
-                  voiceState === "listening"
-                    ? "bg-white text-ink hover:bg-slate-100"
-                    : "bg-cyan-300 text-ink hover:bg-cyan-200",
-                  (isSending || isCompleting || isCompleted || voiceSupported === false) && "cursor-not-allowed opacity-50"
-                )}
-              >
-                {voiceState === "listening"
-                  ? "Listening now"
-                  : voiceState === "thinking"
-                    ? "Waiting for homeowner"
-                    : voiceState === "speaking"
-                      ? "Homeowner is talking"
-                      : voiceSupported
-                        ? "Tap to talk"
-                        : "Voice input unavailable"}
-              </button>
+              {voiceConnectionState === "disconnected" ? (
+                <button
+                  type="button"
+                  disabled={voiceSupported === false || isCompleted}
+                  onClick={() => void startRealtimeCall()}
+                  className={cn(
+                    "rounded-full px-8 py-5 text-base font-semibold transition",
+                    voiceSupported ? "bg-cyan-300 text-ink hover:bg-cyan-200" : "bg-white/20 text-white/60",
+                    (voiceSupported === false || isCompleted) && "cursor-not-allowed opacity-60"
+                  )}
+                >
+                  {voiceSupported ? "Start Live Call" : "Live voice unavailable in this browser"}
+                </button>
+              ) : null}
+
+              {voiceConnectionState === "connecting" ? (
+                <div className="rounded-full border border-white/15 px-8 py-5 text-center text-base font-semibold text-white/80">
+                  Connecting call
+                </div>
+              ) : null}
+
+              {voiceConnectionState === "connected" ? (
+                <div className="rounded-full border border-white/15 px-8 py-5 text-center text-base font-semibold text-white/80">
+                  Live call is active
+                </div>
+              ) : null}
+
               <button
                 type="button"
                 disabled={isCompleting || isSending || isCompleted}
@@ -569,7 +660,7 @@ export function ScenarioSessionClient({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">Keyboard Reply</p>
-                <p className="mt-2 text-sm leading-6 text-slate-200">Use this if you want to steer the conversation manually instead of talking out loud.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">Keep this closed unless you need to steer the conversation manually.</p>
               </div>
               {analysisSummary ? <p className="text-sm text-slate-300">{analysisSummary}</p> : null}
             </div>
