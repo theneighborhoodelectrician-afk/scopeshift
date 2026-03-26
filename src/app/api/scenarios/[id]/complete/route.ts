@@ -29,7 +29,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       scores.risk_explanation_score +
       scores.education_score +
       scores.options_score +
-      scores.commitment_score) / 6
+      scores.commitment_score +
+      scores.scope_expansion_score) / 7
   );
   const feedback = await generateScenarioFeedback(messages, session.hiddenMotivation);
 
@@ -98,6 +99,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       education_score: scores.education_score,
       options_score: scores.options_score,
       commitment_score: scores.commitment_score,
+      scope_expansion_score: scores.scope_expansion_score,
       overall_score: overallScore
     },
     feedback

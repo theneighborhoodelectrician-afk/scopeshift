@@ -1,5 +1,6 @@
 import { aiClient, generateJson } from "@/lib/ai/client";
 import { feedbackPrompt } from "@/lib/prompts/feedback";
+import { analyzeScopeExpansion } from "@/lib/scoring/detection";
 import { buildFeedback } from "@/lib/scoring/rubric";
 
 type FeedbackPayload = {
@@ -12,6 +13,7 @@ type FeedbackPayload = {
 
 function fallbackFeedback(messages: string[], hiddenMotivation: string) {
   const joined = messages.join(" ").toLowerCase();
+  const scopeSignals = analyzeScopeExpansion(messages);
 
   return buildFeedback(
     {
@@ -33,7 +35,11 @@ function fallbackFeedback(messages: string[], hiddenMotivation: string) {
         joined.includes("which option makes the most sense") || joined.includes("handle this today"),
       consequenceExplanationClear:
         joined.includes("risk") || joined.includes("failure") || joined.includes("safety"),
-      pricePresentedLast: joined.includes("price first") === false
+      pricePresentedLast: joined.includes("price first") === false,
+      symptomToSystemLinks: scopeSignals.symptom_to_system_links,
+      whileHereFraming: scopeSignals.while_here_framing,
+      futureValueDiscovery: scopeSignals.future_value_discovery,
+      largerSolutionPresented: scopeSignals.larger_solution_presented
     },
     [hiddenMotivation]
   );

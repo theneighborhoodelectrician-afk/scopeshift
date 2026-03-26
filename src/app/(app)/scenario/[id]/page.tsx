@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/components/scenario/chat-window";
 import { ScenarioSessionClient } from "@/components/scenario/scenario-session-client";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { scoreScopeExpansion } from "@/lib/scoring/detection";
 
 function formatMode(value: string) {
   return value.replaceAll("_", " ");
@@ -71,6 +72,7 @@ export default async function ScenarioPage({ params }: { params: Promise<{ id: s
   }, []);
 
   const subtitle = formatMode(session.difficultyMode) + " · coach " + session.coachMode + " · " + session.visibleProblem;
+  const scopeExpansionScore = scoreScopeExpansion(session.turns.map((turn) => turn.messageText));
   const initialResults = session.score && session.feedback
     ? {
         scores: {
@@ -80,6 +82,7 @@ export default async function ScenarioPage({ params }: { params: Promise<{ id: s
           education_score: session.score.educationScore,
           options_score: session.score.optionsScore,
           commitment_score: session.score.commitmentScore,
+          scope_expansion_score: scopeExpansionScore,
           overall_score: session.score.overallScore
         },
         feedback: {

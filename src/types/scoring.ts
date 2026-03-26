@@ -5,6 +5,7 @@ export type Scorecard = {
   education_score: number;
   options_score: number;
   commitment_score: number;
+  scope_expansion_score: number;
 };
 
 export type FeedbackReport = {
@@ -25,6 +26,10 @@ export type PerformanceSignals = {
   commitmentQuestionAsked: boolean;
   consequenceExplanationClear: boolean;
   pricePresentedLast: boolean;
+  symptomToSystemLinks: number;
+  whileHereFraming: boolean;
+  futureValueDiscovery: boolean;
+  largerSolutionPresented: boolean;
 };
 
 const REQUIRED_DISCOVERY = [
@@ -65,7 +70,8 @@ export function createEmptyScorecard(): Scorecard {
     risk_explanation_score: 0,
     education_score: 0,
     options_score: 0,
-    commitment_score: 0
+    commitment_score: 0,
+    scope_expansion_score: 0
   };
 }
 
@@ -107,6 +113,13 @@ export function scorePerformance(signals: PerformanceSignals): Scorecard {
   }
 
   const commitment_score = clampScore(signals.commitmentQuestionAsked ? 9 : 2);
+  const scope_expansion_score = clampScore(
+    1 +
+      Math.min(3, signals.symptomToSystemLinks) +
+      (signals.whileHereFraming ? 2 : 0) +
+      (signals.futureValueDiscovery ? 2 : 0) +
+      (signals.largerSolutionPresented ? 2 : 0)
+  );
 
   return {
     rapport_score,
@@ -114,7 +127,8 @@ export function scorePerformance(signals: PerformanceSignals): Scorecard {
     risk_explanation_score,
     education_score,
     options_score,
-    commitment_score
+    commitment_score,
+    scope_expansion_score
   };
 }
 
@@ -142,6 +156,9 @@ export function buildFeedback(
   if (signals.commitmentQuestionAsked) {
     strong_moments.push("Asked for a decision instead of ending with information only.");
   }
+  if (signals.symptomToSystemLinks > 0 || signals.whileHereFraming || signals.largerSolutionPresented) {
+    strong_moments.push("Expanded the call beyond the tiny entry problem and positioned a larger professional solution.");
+  }
 
   const phrasing_improvements: string[] = [];
   if (!signals.pricePresentedLast) {
@@ -153,6 +170,12 @@ export function buildFeedback(
   if (!signals.commitmentQuestionAsked) {
     phrasing_improvements.push("Finish with a direct commitment question such as asking which option makes the most sense today.");
   }
+  if (signals.symptomToSystemLinks === 0 && signals.largerSolutionPresented === false) {
+    phrasing_improvements.push("Connect the visible symptom to the larger safety, reliability, or capacity issue so the bigger recommendation feels earned.");
+  }
+  if (signals.whileHereFraming === false) {
+    phrasing_improvements.push("Use while-we-are-here language to show why handling the broader scope now is more professional and efficient.");
+  }
 
   return {
     missed_questions,
@@ -160,6 +183,6 @@ export function buildFeedback(
     strong_moments,
     phrasing_improvements,
     next_attempt_strategy:
-      "Lead with rapport, cover the seven discovery topics, teach through consequences, present three options, and ask for a decision before ending the call."
+      "Build trust, uncover the real motivation, connect the small symptom to the larger issue, present three professional options, and ask for the right work while you are already onsite."
   };
 }

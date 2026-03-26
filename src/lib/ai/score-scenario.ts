@@ -1,5 +1,6 @@
 import { aiClient, generateJson } from "@/lib/ai/client";
 import { scoringPrompt } from "@/lib/prompts/scoring";
+import { analyzeScopeExpansion } from "@/lib/scoring/detection";
 import { scorePerformance } from "@/lib/scoring/rubric";
 
 type ScorePayload = {
@@ -9,7 +10,12 @@ type ScorePayload = {
   education_score: number;
   options_score: number;
   commitment_score: number;
+  scope_expansion_score: number;
 };
+
+function clamp(value: number) {
+  return Math.max(0, Math.min(10, Math.round(value)));
+}
 
 function fallbackScore(messages: string[]) {
   const joined = messages.join(" ").toLowerCase();
@@ -22,13 +28,14 @@ function fallbackScore(messages: string[]) {
     "future renovation plans",
     "reason for call today"
   ].filter((topic) => joined.includes(topic.split(" ")[0]));
+  const scopeSignals = analyzeScopeExpansion(messages);
 
   return scorePerformance({
     rapportBuilt: joined.includes("thanks") || joined.includes("appreciate") || joined.includes("glad"),
     discoveryTopicsCovered,
     identifiedMotivations: joined.includes("safety") ? ["worried about family safety"] : [],
-    usedEducationRewards: ["family safety framing", "future failure explanation"].filter((item) =>
-      joined.includes(item.includes("family") ? "safety" : "future")
+    usedEducationRewards: ["family safety framing", "future failure explanation", "capacity limitations", "timeline consequences"].filter((item) =>
+      joined.includes(item.includes("family") ? "safety" : item.includes("future") ? "future" : item.includes("capacity") ? "capacity" : "today")
     ),
     usedEducationPenalties: ["tool talk", "feature dumping"].filter((item) =>
       joined.includes(item.includes("tool") ? "amp" : "feature")
@@ -39,28 +46,30 @@ function fallbackScore(messages: string[]) {
       joined.includes("handle this today") ||
       joined.includes("take care of this while we are here"),
     consequenceExplanationClear: joined.includes("safety") || joined.includes("failure") || joined.includes("risk"),
-    pricePresentedLast: joined.includes("price first") === false
+    pricePresentedLast: joined.includes("price first") === false,
+    symptomToSystemLinks: scopeSignals.symptom_to_system_links,
+    whileHereFraming: scopeSignals.while_here_framing,
+    futureValueDiscovery: scopeSignals.future_value_discovery,
+    largerSolutionPresented: scopeSignals.larger_solution_presented
   });
 }
 
-function clamp(value: number) {
-  return Math.max(0, Math.min(10, Math.round(value)));
-}
-
 export async function scoreScenario(messages: string[]) {
+  const fallback = fallbackScore(messages);
+
   if (aiClient.ready === false) {
-    return fallbackScore(messages);
+    return fallback;
   }
 
   try {
     const payload = await generateJson<ScorePayload>({
       instructions: scoringPrompt.content,
       input: ["Transcript:", messages.join("\n")].join("\n"),
-      maxOutputTokens: 250
+      maxOutputTokens: 320
     });
 
     if (payload == null) {
-      return fallbackScore(messages);
+      return fallback;
     }
 
     return {
@@ -69,9 +78,13 @@ export async function scoreScenario(messages: string[]) {
       risk_explanation_score: clamp(payload.risk_explanation_score),
       education_score: clamp(payload.education_score),
       options_score: clamp(payload.options_score),
-      commitment_score: clamp(payload.commitment_score)
+      commitment_score: clamp(payload.commitment_score),
+      scope_expansion_score:
+        typeof payload.scope_expansion_score === "number"
+          ? clamp(payload.scope_expansion_score)
+          : fallback.scope_expansion_score
     };
   } catch {
-    return fallbackScore(messages);
+    return fallback;
   }
 }

@@ -19,6 +19,7 @@ type ScenarioScores = {
   education_score: number;
   options_score: number;
   commitment_score: number;
+  scope_expansion_score: number;
   overall_score: number;
 };
 

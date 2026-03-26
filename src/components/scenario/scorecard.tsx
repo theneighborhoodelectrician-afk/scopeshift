@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   education_score: "Education",
   options_score: "Options",
   commitment_score: "Commitment",
+  scope_expansion_score: "Scope Expansion",
   overall_score: "Overall"
 };
 
