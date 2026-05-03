@@ -1,6 +1,13 @@
+import bcrypt from "bcryptjs";
 import { PrismaClient, ScenarioCategory } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+const orgName = process.env.SEED_ORG_NAME ?? "Local Demo Company";
+const orgSlug = process.env.SEED_ORG_SLUG ?? "local";
+const teamName = process.env.SEED_TEAM_NAME ?? "Field Team A";
+const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@scopeshift.local";
+const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "scopeshift";
 
 const templates = [
   {
@@ -65,6 +72,52 @@ const templates = [
   }
 ];
 
+async function seedDemoOrg() {
+  const org = await prisma.organization.upsert({
+    where: { slug: orgSlug },
+    create: { name: orgName, slug: orgSlug },
+    update: { name: orgName }
+  });
+
+  let team = await prisma.team.findFirst({
+    where: { organizationId: org.id, name: teamName }
+  });
+  if (!team) {
+    team = await prisma.team.create({
+      data: { organizationId: org.id, name: teamName }
+    });
+  }
+
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+  const user = await prisma.user.upsert({
+    where: { email: adminEmail },
+    create: {
+      email: adminEmail,
+      firstName: "Admin",
+      lastName: "User",
+      role: "owner",
+      passwordHash,
+      organizationId: org.id,
+      teamId: team.id
+    },
+    update: {
+      organizationId: org.id,
+      teamId: team.id,
+      role: "owner",
+      passwordHash
+    }
+  });
+
+  await prisma.userProgress.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id },
+    update: {}
+  });
+
+  return { org, team, user };
+}
+
 async function main() {
   for (const template of templates) {
     await prisma.scenarioTemplate.upsert({
@@ -73,6 +126,12 @@ async function main() {
       create: template
     });
   }
+
+  const { org, user } = await seedDemoOrg();
+  console.log(
+    `Seeded org "${org.name}" (${org.slug}) and admin ${user.email}. ` +
+      `Set SEED_* env vars in .env to change (see .env.example).`
+  );
 }
 
 main()

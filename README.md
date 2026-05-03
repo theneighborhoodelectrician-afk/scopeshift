@@ -30,8 +30,8 @@ ScopeShift is a standalone Next.js, TypeScript, Tailwind, and Prisma application
 2. Install dependencies with `npm install`.
 3. Run `npx prisma generate`.
 4. Run `npx prisma migrate dev`.
-5. Run `npm run db:seed`.
-6. Start the app with `npm run dev`.
+5. Run `npm run db:seed` (creates scenario templates plus a demo org, team, and owner user—see `.env.example` for `SEED_*` overrides).
+6. Start the app with `npm run dev` and sign in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` (defaults: `admin@scopeshift.local` / `scopeshift` if unset).
 
 ## Important Notes
 

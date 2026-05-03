@@ -10,8 +10,12 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (!user.teamId) {
+    return NextResponse.json([]);
+  }
+
   const users = await prisma.user.findMany({
-    where: { teamId: user.teamId ?? undefined },
+    where: { teamId: user.teamId },
     include: { progress: true }
   });
 

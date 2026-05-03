@@ -15,8 +15,18 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  if (!user.teamId) {
+    return NextResponse.json({
+      team_average: 0,
+      weakest_categories: ["discovery_score", "commitment_score"],
+      strongest_categories: ["education_score"],
+      leaderboard: [],
+      recent_completion_counts: 0
+    });
+  }
+
   const teamSessions = await prisma.scenarioSession.findMany({
-    where: { teamId: user.teamId ?? undefined, status: "completed" },
+    where: { teamId: user.teamId, status: "completed" },
     include: { score: true },
     orderBy: { completedAt: "desc" },
     take: 50
